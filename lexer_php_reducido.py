@@ -3,7 +3,7 @@ import sys
 import ply.lex as lex
 
 # -------------------------------
-# Palabras reservadas (reducidas)
+# Palabras reservadas
 # -------------------------------
 reserved = {
     'function': 'FUNCTION',
@@ -66,35 +66,39 @@ tokens = (
     'LBRACKET', 'RBRACKET',
     'LBRACE', 'RBRACE',
     'COMMA', 'SEMICOLON', 'COLON', 'QUESTION',
+
+    # Tokens especiales
+    'NAMESPACE_SEPARATOR',
 ) + tuple(reserved.values())
 
 # -------------------------------
 # Reglas simples (1 caracter)
 # -------------------------------
-t_PLUS       = r'\+'
-t_MINUS      = r'-'
-t_TIMES      = r'\*'
-t_DIVIDE     = r'/'
-t_MOD        = r'%'
-t_ASSIGN     = r'='
-t_LT         = r'<'
-t_GT         = r'>'
-t_NOT        = r'!'
-t_LPAREN     = r'\('
-t_RPAREN     = r'\)'
-t_LBRACKET   = r'\['
-t_RBRACKET   = r'\]'
-t_LBRACE     = r'\{'
-t_RBRACE     = r'\}'
-t_COMMA      = r','
-t_SEMICOLON  = r';'
-t_COLON      = r':'
-t_QUESTION   = r'\?'
-t_CONCAT     = r'\.'   # concatenación en PHP
+t_PLUS                = r'\+'
+t_MINUS               = r'-'
+t_TIMES               = r'\*'
+t_DIVIDE              = r'/'
+t_MOD                 = r'%'
+t_ASSIGN              = r'='
+t_LT                  = r'<'
+t_GT                  = r'>'
+t_NOT                 = r'!'
+t_LPAREN              = r'\('
+t_RPAREN              = r'\)'
+t_LBRACKET            = r'\['
+t_RBRACKET            = r'\]'
+t_LBRACE              = r'\{'
+t_RBRACE              = r'\}'
+t_COMMA               = r','
+t_SEMICOLON           = r';'
+t_COLON               = r':'
+t_QUESTION            = r'\?'
+t_CONCAT              = r'\.'
+t_NAMESPACE_SEPARATOR = r'\\'
 
 # -------------------------------
 # Reglas con mayor prioridad (multi-char)
-#  (Defínelas como funciones para precedencia)
+#  (Definidas como funciones para precedencia)
 # -------------------------------
 def t_PHP_OPEN(t):
     r'<\?php'
@@ -171,9 +175,8 @@ def t_NUMBER(t):
     return t
 
 # Cadena "doble" o 'simple' con escapes simples (sin interpolación)
-# Nota: Esto es una simplificación útil para un lexer base.
 def t_STRING(t):
-    r'"([^\\\n]|\\.)*"|\'([^\\\n]|\\.)*\''
+    r'(?:"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')'
     raw = t.value
     if raw[0] == raw[-1] and raw[0] in ("'", '"'):
         t.value = raw[1:-1]
