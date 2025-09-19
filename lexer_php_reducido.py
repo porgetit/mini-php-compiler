@@ -1,249 +1,224 @@
 # lexer_php_reducido.py
-import sys
+from dataclasses import dataclass, field
+from typing import ClassVar, Dict, Iterator, Tuple
+
 import ply.lex as lex
 
-# -------------------------------
-# Palabras reservadas
-# -------------------------------
-reserved = {
-    'function': 'FUNCTION',
-    'echo':     'ECHO',
-    'print':    'PRINT',
-    'if':       'IF',
-    'else':     'ELSE',
-    'elseif':   'ELSEIF',
-    'while':    'WHILE',
-    'for':      'FOR',
-    'foreach':  'FOREACH',
-    'as':       'AS',
-    'return':   'RETURN',
-    'true':     'TRUE',
-    'false':    'FALSE',
-    'null':     'NULL',
-    'class':    'CLASS',
-    'new':      'NEW',
-    'public':   'PUBLIC',
-    'private':  'PRIVATE',
-    'protected':'PROTECTED',
-    'static':   'STATIC',
-    'use':      'USE',
-    'namespace':'NAMESPACE',
-    'include':  'INCLUDE',
-    'require':  'REQUIRE',
-}
 
-# -------------------------------
-# Lista de tokens
-# -------------------------------
-tokens = (
-    # Tags PHP
-    'PHP_OPEN',      # <?php
-    'PHP_CLOSE',     # ?>
+@dataclass(frozen=True)
+class LexerConfig:
+    reserved: Dict[str, str] = field(
+        default_factory=lambda: {
+            'function': 'FUNCTION',
+            'echo': 'ECHO',
+            'print': 'PRINT',
+            'if': 'IF',
+            'else': 'ELSE',
+            'elseif': 'ELSEIF',
+            'while': 'WHILE',
+            'for': 'FOR',
+            'foreach': 'FOREACH',
+            'as': 'AS',
+            'return': 'RETURN',
+            'true': 'TRUE',
+            'false': 'FALSE',
+            'null': 'NULL',
+            'class': 'CLASS',
+            'new': 'NEW',
+            'public': 'PUBLIC',
+            'private': 'PRIVATE',
+            'protected': 'PROTECTED',
+            'static': 'STATIC',
+            'use': 'USE',
+            'namespace': 'NAMESPACE',
+            'include': 'INCLUDE',
+            'require': 'REQUIRE',
+        }
+    )
 
-    # Identificadores y variables
-    'VARIABLE',      # $var
-    'ID',            # nombres de funciones/clases/etc. (sin $)
+    base_tokens: ClassVar[Tuple[str, ...]] = (
+        'PHP_OPEN',
+        'PHP_CLOSE',
+        'VARIABLE',
+        'ID',
+        'NUMBER',
+        'STRING',
+        'PLUS', 'MINUS', 'TIMES', 'DIVIDE', 'MOD',
+        'CONCAT',
+        'ASSIGN',
+        'EQUAL', 'NOTEQUAL',
+        'IDENT', 'NIDENT',
+        'LT', 'LE', 'GT', 'GE',
+        'AND', 'OR', 'NOT',
+        'ARROW',
+        'SCOPE',
+        'DOUBLEARROW',
+        'INC', 'DEC',
+        'LPAREN', 'RPAREN',
+        'LBRACKET', 'RBRACKET',
+        'LBRACE', 'RBRACE',
+        'COMMA', 'SEMICOLON', 'COLON', 'QUESTION',
+        'NAMESPACE_SEPARATOR',
+    )
 
-    # Literales
-    'NUMBER',
-    'STRING',
+    def full_token_list(self) -> Tuple[str, ...]:
+        return self.base_tokens + tuple(self.reserved.values())
 
-    # Operadores y símbolos
-    'PLUS', 'MINUS', 'TIMES', 'DIVIDE', 'MOD',
-    'CONCAT',            # .
-    'ASSIGN',            # =
-    'EQUAL', 'NOTEQUAL', # ==, !=
-    'IDENT', 'NIDENT',   # ===, !==
-    'LT', 'LE', 'GT', 'GE',
-    'AND', 'OR', 'NOT',  # &&, ||, !
-    'ARROW',             # ->
-    'SCOPE',             # ::
-    'DOUBLEARROW',       # => (arrays, argumentos nombrados)
-    'INC', 'DEC',        # ++, --
 
-    # Agrupación y separadores
-    'LPAREN', 'RPAREN',
-    'LBRACKET', 'RBRACKET',
-    'LBRACE', 'RBRACE',
-    'COMMA', 'SEMICOLON', 'COLON', 'QUESTION',
+@dataclass
+class PhpLexer:
+    config: LexerConfig = field(default_factory=LexerConfig)
+    tokens: Tuple[str, ...] = field(init=False)
+    reserved: Dict[str, str] = field(init=False)
+    lexer: lex.Lexer = field(init=False)
 
-    # Tokens especiales
-    'NAMESPACE_SEPARATOR',
-) + tuple(reserved.values())
+    t_ignore: ClassVar[str] = ' \t\r'
+    t_PLUS: ClassVar[str] = r'\+'
+    t_MINUS: ClassVar[str] = r'-'
+    t_TIMES: ClassVar[str] = r'\*'
+    t_DIVIDE: ClassVar[str] = r'/'
+    t_MOD: ClassVar[str] = r'%'
+    t_ASSIGN: ClassVar[str] = r'='
+    t_LT: ClassVar[str] = r'<'
+    t_GT: ClassVar[str] = r'>'
+    t_NOT: ClassVar[str] = r'!'
+    t_LPAREN: ClassVar[str] = r'\('
+    t_RPAREN: ClassVar[str] = r'\)'
+    t_LBRACKET: ClassVar[str] = r'\['
+    t_RBRACKET: ClassVar[str] = r'\]'
+    t_LBRACE: ClassVar[str] = r'\{'
+    t_RBRACE: ClassVar[str] = r'\}'
+    t_COMMA: ClassVar[str] = r','
+    t_SEMICOLON: ClassVar[str] = r';'
+    t_COLON: ClassVar[str] = r':'
+    t_QUESTION: ClassVar[str] = r'\?'
+    t_CONCAT: ClassVar[str] = r'\.'
+    t_NAMESPACE_SEPARATOR: ClassVar[str] = r'\\'
 
-# -------------------------------
-# Reglas simples (1 caracter)
-# -------------------------------
-t_PLUS                = r'\+'
-t_MINUS               = r'-'
-t_TIMES               = r'\*'
-t_DIVIDE              = r'/'
-t_MOD                 = r'%'
-t_ASSIGN              = r'='
-t_LT                  = r'<'
-t_GT                  = r'>'
-t_NOT                 = r'!'
-t_LPAREN              = r'\('
-t_RPAREN              = r'\)'
-t_LBRACKET            = r'\['
-t_RBRACKET            = r'\]'
-t_LBRACE              = r'\{'
-t_RBRACE              = r'\}'
-t_COMMA               = r','
-t_SEMICOLON           = r';'
-t_COLON               = r':'
-t_QUESTION            = r'\?'
-t_CONCAT              = r'\.'
-t_NAMESPACE_SEPARATOR = r'\\'
+    def __post_init__(self) -> None:
+        self.reserved = self.config.reserved
+        self.tokens = self.config.full_token_list()
+        self.lexer = lex.lex(module=self)
 
-# -------------------------------
-# Reglas con mayor prioridad (multi-char)
-#  (Definidas como funciones para precedencia)
-# -------------------------------
-def t_PHP_OPEN(t):
-    r'<\?php'
-    return t
+    def t_PHP_OPEN(self, t):
+        r'<\?php'
+        return t
 
-def t_PHP_CLOSE(t):
-    r'\?>'
-    return t
+    def t_PHP_CLOSE(self, t):
+        r'\?>'
+        return t
 
-def t_IDENT(t):    # ===
-    r'==='
-    t.type = 'IDENT'
-    return t
+    def t_IDENT(self, t):
+        r'==='
+        t.type = 'IDENT'
+        return t
 
-def t_NIDENT(t):   # !==
-    r'!=='
-    t.type = 'NIDENT'
-    return t
+    def t_NIDENT(self, t):
+        r'!=='
+        t.type = 'NIDENT'
+        return t
 
-def t_EQUAL(t):    # ==
-    r'=='
-    return t
+    def t_EQUAL(self, t):
+        r'=='
+        return t
 
-def t_NOTEQUAL(t): # !=
-    r'!='
-    return t
+    def t_NOTEQUAL(self, t):
+        r'!='
+        return t
 
-def t_LE(t):       # <=
-    r'<='
-    return t
+    def t_LE(self, t):
+        r'<='
+        return t
 
-def t_GE(t):       # >=
-    r'>='
-    return t
+    def t_GE(self, t):
+        r'>='
+        return t
 
-def t_AND(t):      # &&
-    r'&&'
-    return t
+    def t_AND(self, t):
+        r'&&'
+        return t
 
-def t_OR(t):       # ||
-    r'\|\|'
-    return t
+    def t_OR(self, t):
+        r'\|\|'
+        return t
 
-def t_INC(t):      # ++
-    r'\+\+'
-    return t
+    def t_INC(self, t):
+        r'\+\+'
+        return t
 
-def t_DEC(t):      # --
-    r'--'
-    return t
+    def t_DEC(self, t):
+        r'--'
+        return t
 
-def t_ARROW(t):    # ->
-    r'->'
-    return t
+    def t_ARROW(self, t):
+        r'->'
+        return t
 
-def t_SCOPE(t):    # ::
-    r'::'
-    return t
+    def t_SCOPE(self, t):
+        r'::'
+        return t
 
-def t_DOUBLEARROW(t):  # =>
-    r'=>'
-    return t
+    def t_DOUBLEARROW(self, t):
+        r'=>'
+        return t
 
-# -------------------------------
-# Literales: números y cadenas
-# -------------------------------
-def t_NUMBER(t):
-    r'(?:\d+\.\d+|\d+)'
-    # Intenta castear a int si no hay punto; si hay, a float
-    if '.' in t.value:
-        t.value = float(t.value)
-    else:
-        t.value = int(t.value)
-    return t
+    def t_NUMBER(self, t):
+        r'(?:\d+\.\d+|\d+)'
+        if '.' in t.value:
+            t.value = float(t.value)
+        else:
+            t.value = int(t.value)
+        return t
 
-# Cadena "doble" o 'simple' con escapes simples (sin interpolación)
-def t_STRING(t):
-    r'(?:"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')'
-    raw = t.value
-    if raw[0] == raw[-1] and raw[0] in ("'", '"'):
-        t.value = raw[1:-1]
-    return t
+    def t_STRING(self, t):
+        r'(?:"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')'
+        raw = t.value
+        if raw and raw[0] == raw[-1] and raw[0] in ("'", '"'):
+            t.value = raw[1:-1]
+        return t
 
-# -------------------------------
-# Variables e identificadores
-# -------------------------------
-def t_VARIABLE(t):
-    r'\$[A-Za-z_][A-Za-z0-9_]*'
-    return t
+    def t_VARIABLE(self, t):
+        r'\$[A-Za-z_][A-Za-z0-9_]*'
+        return t
 
-def t_ID(t):
-    r'[A-Za-z_][A-Za-z0-9_]*'
-    # Mapea a palabra reservada si aplica
-    t.type = reserved.get(t.value, 'ID')
-    return t
+    def t_ID(self, t):
+        r'[A-Za-z_][A-Za-z0-9_]*'
+        t.type = self.reserved.get(t.value, 'ID')
+        return t
 
-# -------------------------------
-# Comentarios y espacios
-# -------------------------------
-t_ignore = ' \t\r'
+    def t_COMMENT_BLOCK(self, t):
+        r'/\*(.|\n)*?\*/'
+        t.lexer.lineno += t.value.count('\n')
 
-# Comentarios tipo C
-def t_COMMENT_BLOCK(t):
-    r'/\*(.|\n)*?\*/'
-    t.lexer.lineno += t.value.count('\n')
+    def t_COMMENT_LINE(self, t):
+        r'//[^\n]*'
 
-# Comentario de línea estilo C++: //...
-def t_COMMENT_LINE(t):
-    r'//[^\n]*'
-    pass
+    def t_COMMENT_HASH(self, t):
+        r'\#[^\n]*'
 
-# Comentario de línea estilo shell: #...
-def t_COMMENT_HASH(t):
-    r'\#[^\n]*'
-    pass
+    def t_newline(self, t):
+        r'\n+'
+        t.lexer.lineno += len(t.value)
 
-# Manejo de nuevas líneas
-def t_newline(t):
-    r'\n+'
-    t.lexer.lineno += len(t.value)
+    def t_error(self, t):
+        print(f"[Lexer] Error lexico en linea {t.lexer.lineno}: caracter inesperado {repr(t.value[0])}")
+        t.lexer.skip(1)
 
-# -------------------------------
-# Errores
-# -------------------------------
-def t_error(t):
-    print(f"[Lexer] Error léxico en línea {t.lexer.lineno}: carácter inesperado {repr(t.value[0])}")
-    t.lexer.skip(1)
+    def tokenize(self, data: str) -> Iterator[lex.LexToken]:
+        self.lexer.input(data)
+        while True:
+            token = self.lexer.token()
+            if not token:
+                break
+            yield token
 
-# -------------------------------
-# Utilidad de prueba
-# -------------------------------
-def test(data, lexer):
-    lexer.input(data)
-    while True:
-        tok = lexer.token()
-        if not tok:
-            break
-        print(tok)
+    def print_tokens(self, data: str) -> None:
+        for token in self.tokenize(data):
+            print(token)
 
-# -------------------------------
-# Construcción del lexer y demo
-# -------------------------------
-if __name__ == '__main__':
-    lexer = lex.lex()
 
+def main() -> None:
+    lexer = PhpLexer()
     demo = r'''
 <?php
 namespace Demo;
@@ -257,8 +232,8 @@ class Foo {
         $ok = ($a === 7) && !false || ($x != $y);
         $arr = ["k1" => 10, "k2" => 20];
         echo $msg . ' Mundo';
-        // comentario de línea
-        # otro comentario de línea
+        // comentario de linea
+        # otro comentario de linea
         /* bloque
            de comentario */
         if ($ok) {
@@ -271,4 +246,8 @@ class Foo {
 ?>
 '''
     print("=== TOKENS ===")
-    test(demo, lexer)
+    lexer.print_tokens(demo)
+
+
+if __name__ == '__main__':
+    main()
