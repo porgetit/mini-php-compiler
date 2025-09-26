@@ -162,6 +162,11 @@ class PhpLexer:
         r'=>'
         return t
 
+    def t_ID_INVALID(self, t):
+        r'\d+[A-Za-z_][A-Za-z0-9_]*'
+        print(f"[Lexer] Error lexico en linea {t.lexer.lineno}: identificador no válido {t.value!r}")
+        return None
+
     def t_NUMBER(self, t):
         r'(?:\d+\.\d+|\d+)'
         if '.' in t.value:
@@ -176,6 +181,11 @@ class PhpLexer:
         if raw and raw[0] == raw[-1] and raw[0] in ("'", '"'):
             t.value = raw[1:-1]
         return t
+
+    def t_VARIABLE_INVALID(self, t):
+        r'\$(?:[ \t]+[A-Za-z_][A-Za-z0-9_]*|[^A-Za-z_\s][^\s]*)'
+        print(f"[Lexer] Error lexico en linea {t.lexer.lineno}: identificador de variable no válido {t.value!r}")
+        return None
 
     def t_VARIABLE(self, t):
         r'\$[A-Za-z_][A-Za-z0-9_]*'

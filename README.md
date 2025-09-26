@@ -63,3 +63,16 @@
 - **Ejecutar demo:** `python lexer_php_reducido.py` imprime la lista de tokens generada a partir del snippet de demostracion incluido en el modulo.
 - **Lanzar pruebas:** `.venv\Scripts\python.exe -m pytest`; requiere instalar dependencias (`pip install -r requirements.txt` si existe) y activar el entorno virtual.
 - **Reproducir errores lexicos conocidos:** ejemplos rapidos `python -c "from lexer_php_reducido import PhpLexer; PhpLexer().print_tokens('$foo @ $bar')"` o `python -c "from lexer_php_reducido import PhpLexer; PhpLexer().print_tokens('echo \"hola')"`.
+
+
+## 8. Asistencia de IA
+- Este proyecto conto con apoyo del modelo de lenguaje de OpenAI (Codex en la CLI) para automatizar tareas como la configuracion del entorno virtual, la instalacion de dependencias y ajustes iterativos del lexer y la suite de pruebas.
+- Todas las contribuciones generadas por la IA fueron revisadas y validadas mediante la suite de tests automatizados antes de integrarse al repositorio.
+
+
+## 9. Correcciones
+- **Variables no validas:** El lexer marcaba el signo `$` como error pero dejaba que el resto del lexema (`9abc`, `foo`) se tokenizara como identificadores parciales.
+- **Solucion aplicada:** Se agrego la regla `t_VARIABLE_INVALID` en `lexer_php_reducido.py` para capturar la secuencia completa cuando el nombre de variable no cumple la sintaxis, emitir un unico mensaje (`identificador de variable no válido`) y descartar tokens residuales. Las pruebas negativas de `tests/test_tokens.py` se ajustaron para validar el nuevo mensaje y que no queden tokens pendientes.
+- **Identificadores con digito inicial:** Aparecia el mismo patron en nombres como `7foo`, que se fraccionaban en `NUMBER` e `ID`, dejando pasar identificadores no permitidos.
+- **Solucion aplicada:** La regla `t_ID_INVALID` captura la secuencia con digito inicial, reporta `identificador no válido` y omite el token. Las pruebas ahora cubren `7foo` y `function 7foo() { }` para asegurar que no se produzcan tokens residuales.
+

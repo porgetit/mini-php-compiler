@@ -375,7 +375,7 @@ def test_invalid_character_emits_error_and_recovers(lexer, capsys):
     tokens = collect_tokens(lexer, "$foo @ $bar")
     captured = capsys.readouterr()
     assert "[Lexer] Error lexico en linea 1" in captured.out
-    assert "'@'" in captured.out
+    assert "caracter inesperado '@'" in captured.out
     assert [(tok.type, tok.value) for tok in tokens] == [
         ("VARIABLE", "$foo"),
         ("VARIABLE", "$bar"),
@@ -386,7 +386,7 @@ def test_unterminated_string_reports_error(lexer, capsys):
     tokens = collect_tokens(lexer, 'echo "hola')
     captured = capsys.readouterr()
     assert "[Lexer] Error lexico en linea 1" in captured.out
-    assert "'\"'" in captured.out
+    assert "caracter inesperado '\"'" in captured.out
     assert [(tok.type, tok.value) for tok in tokens] == [
         ("ECHO", "echo"),
         ("ID", "hola"),
@@ -396,10 +396,39 @@ def test_invalid_variable_name_reports_error(lexer, capsys):
     tokens = collect_tokens(lexer, "$9abc")
     captured = capsys.readouterr()
     assert "[Lexer] Error lexico en linea 1" in captured.out
-    assert "'$'" in captured.out
+    assert "identificador de variable invalido" in captured.out
+    assert "'$9abc'" in captured.out
+    assert [(tok.type, tok.value) for tok in tokens] == []
+
+
+def test_variable_with_space_reports_error(lexer, capsys):
+    tokens = collect_tokens(lexer, "$ foo")
+    captured = capsys.readouterr()
+    assert "[Lexer] Error lexico en linea 1" in captured.out
+    assert "identificador de variable invalido" in captured.out
+    assert "'$ foo'" in captured.out
+    assert [(tok.type, tok.value) for tok in tokens] == []
+
+def test_identifier_with_leading_digit_reports_error(lexer, capsys):
+    tokens = collect_tokens(lexer, "7foo")
+    captured = capsys.readouterr()
+    assert "[Lexer] Error lexico en linea 1" in captured.out
+    assert "identificador invalido" in captured.out
+    assert "'7foo'" in captured.out
+    assert [(tok.type, tok.value) for tok in tokens] == []
+
+def test_function_name_with_leading_digit_reports_error(lexer, capsys):
+    tokens = collect_tokens(lexer, "function 7foo() { }")
+    captured = capsys.readouterr()
+    assert "[Lexer] Error lexico en linea 1" in captured.out
+    assert "identificador invalido" in captured.out
+    assert "'7foo'" in captured.out
     assert [(tok.type, tok.value) for tok in tokens] == [
-        ("NUMBER", 9),
-        ("ID", "abc"),
+        ("FUNCTION", "function"),
+        ("LPAREN", "("),
+        ("RPAREN", ")"),
+        ("LBRACE", "{"),
+        ("RBRACE", "}"),
     ]
 
 
@@ -407,7 +436,7 @@ def test_single_ampersand_reports_error(lexer, capsys):
     tokens = collect_tokens(lexer, "&$foo")
     captured = capsys.readouterr()
     assert "[Lexer] Error lexico en linea 1" in captured.out
-    assert "'&'" in captured.out
+    assert "caracter inesperado '&'" in captured.out
     assert [(tok.type, tok.value) for tok in tokens] == [
         ("VARIABLE", "$foo"),
     ]
