@@ -76,3 +76,7 @@
 - **Identificadores con digito inicial:** Aparecia el mismo patron en nombres como `7foo`, que se fraccionaban en `NUMBER` e `ID`, dejando pasar identificadores no permitidos.
 - **Solucion aplicada:** La regla `t_ID_INVALID` captura la secuencia con digito inicial, reporta `identificador no válido` y omite el token. Las pruebas ahora cubren `7foo` y `function 7foo() { }` para asegurar que no se produzcan tokens residuales.
 
+## 10. Integrantes
+- Kevin Esguerra Cardona
+- Juan Felipe Lozano Aristizabal
+- Juan Manuel García Isaza
