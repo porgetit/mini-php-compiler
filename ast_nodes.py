@@ -165,3 +165,8 @@ class Member:
 class StaticAccess:
     qname: Name
     name: str
+
+@dataclass
+class New:
+    class_name: Name
+    args: List[Expr]

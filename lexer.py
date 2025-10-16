@@ -1,4 +1,4 @@
-# lexer_php_reducido.py
+"""Analizador Léxico para un subconjunto de PHP."""
 from dataclasses import dataclass, field
 from typing import ClassVar, Dict, Iterator, Tuple
 

@@ -1,3 +1,4 @@
+"""Parser para un subconjunto de PHP."""
 from __future__ import annotations
 from typing import List, Optional
 import ply.yacc as yacc
@@ -373,11 +374,15 @@ def p_primary(p):
                | literal
                | LPAREN expr RPAREN
                | array_lit
-               | qname"""
+               | qname
+               | NEW qname LPAREN args_opt RPAREN"""
     if p.slice[1].type == 'VARIABLE':
         p[0] = Var(p[1])
     elif p.slice[1].type == 'LPAREN':
         p[0] = p[2]
+    elif p.slice[1].type == 'NEW':
+        args = p[4] or []
+        p[0] = New(p[2], args)
     else:
         p[0] = p[1]
 

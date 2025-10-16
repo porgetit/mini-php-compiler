@@ -12,30 +12,40 @@ import json
 import sys
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, List, Sequence
 
+import shutil
 from lexer import PhpLexer
 from parser import build_parser
+from datetime import datetime
 
 
-def _load_source(path: str) -> str:
-    source_path = Path(path)
-    if not source_path.exists():
-        print(f"[Main] No se encontro el archivo: {source_path}", file=sys.stderr)
+def _load_source(path: Path) -> str:
+    if not path.exists():
+        print(f"[Main] No se encontro el archivo: {path}", file=sys.stderr)
         raise SystemExit(1)
     try:
-        return source_path.read_text(encoding="utf-8")
+        return path.read_text(encoding="utf-8")
     except OSError as exc:
-        print(f"[Main] Error al leer {source_path}: {exc}", file=sys.stderr)
+        print(f"[Main] Error al leer {path}: {exc}", file=sys.stderr)
         raise SystemExit(1)
 
 
-def _print_tokens(code: str) -> None:
+def _collect_tokens(code: str) -> List[dict]:
     lexer = PhpLexer()
-    print("=== TOKENS ===")
+    tokens = []
     for token in lexer.tokenize(code):
-        value_repr = repr(token.value)
-        print(f"{token.lineno:04d}: {token.type:<12} {value_repr}")
+        tokens.append(
+            {"lineno": token.lineno, "type": token.type, "value": token.value}
+        )
+    return tokens
+
+
+def _print_tokens(tokens: List[dict]) -> None:
+    print("=== TOKENS ===")
+    for token in tokens:
+        value_repr = repr(token["value"])
+        print(f"{token['lineno']:04d}: {token['type']:<12} {value_repr}")
     print()
 
 
@@ -52,6 +62,40 @@ def _to_serializable(obj: Any) -> Any:
 def _parse(code: str):
     parser = build_parser()
     return parser.parse(code, lexer=PhpLexer().lexer)
+
+
+def _write_verbose_artifacts(
+    source_path: Path,
+    tokens: List[dict],
+    ast_obj: Any,
+) -> Path:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    try:
+        relative = source_path.resolve().relative_to(Path.cwd())
+    except ValueError:
+        relative = Path(source_path.name)
+    base_dir = Path("reportes") / relative
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    destination_source = base_dir / source_path.name
+    try:
+        if source_path.resolve() != destination_source.resolve():
+            shutil.copy2(source_path, destination_source)
+        else:
+            destination_source.write_text(source_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        print(f"[Main] No se pudo copiar el archivo fuente: {exc}", file=sys.stderr)
+
+    payload = {
+        "timestamp": timestamp,
+        "source": str(source_path),
+        "tokens": tokens,
+        "ast": _to_serializable(ast_obj) if ast_obj is not None else None,
+        "parse_success": ast_obj is not None,
+    }
+    json_path = base_dir / f"{timestamp}.json"
+    json_path.write_text(json.dumps(payload, indent=2))
+    return json_path
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -72,16 +116,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Muestra el AST resultante en formato JSON.",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Guarda tokens y AST en un artefacto JSON junto con el archivo fuente.",
+    )
 
     args = parser.parse_args(argv)
-    code = _load_source(args.fuente)
+    source_path = Path(args.fuente)
+    code = _load_source(source_path)
 
-    if args.tokens:
-        _print_tokens(code)
+    tokens_data: List[dict] | None = None
+    if args.tokens or args.verbose:
+        tokens_data = _collect_tokens(code)
+        if args.tokens:
+            _print_tokens(tokens_data)
 
     ast = _parse(code)
+
     if ast is None:
         print("[Main] Se encontraron errores durante el parseo.", file=sys.stderr)
+        if args.verbose:
+            if tokens_data is None:
+                tokens_data = _collect_tokens(code)
+            json_path = _write_verbose_artifacts(source_path, tokens_data, ast)
+            print(f"[Main] Artefactos verbose guardados en {json_path}")
         return 1
 
     print("[Main] Parseo completado correctamente.")
@@ -90,6 +149,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("=== AST ===")
         serializable = _to_serializable(ast)
         print(json.dumps(serializable, indent=2))
+
+    if args.verbose:
+        if tokens_data is None:
+            tokens_data = _collect_tokens(code)
+        json_path = _write_verbose_artifacts(source_path, tokens_data, ast)
+        print(f"[Main] Artefactos verbose guardados en {json_path}")
 
     return 0
 
