@@ -3,11 +3,9 @@ from __future__ import annotations
 from typing import List, Optional
 import ply.yacc as yacc
 
-# Importa tu lexer (tokens y nombres coinciden 1:1 con el parser)
-from lexer import LexerConfig, PhpLexer  # <-- tu archivo
+from lexer import LexerConfig, PhpLexer
 from ast_nodes import *
 
-# PLY requiere que 'tokens' exista en el módulo del parser
 tokens = LexerConfig().full_token_list()
 
 # === PRECEDENCIAS (de menor a mayor) ===
@@ -21,7 +19,6 @@ precedence = (
     ('right', 'NOT'),
     ('right', 'UMINUS', 'UPLUS'),         # unarios
     ('right', 'INC', 'DEC'),              # prefijos
-    # Nota: los INC/DEC sufijos se resuelven en Postfix
 )
 
 # === REGLAS ===
@@ -421,7 +418,7 @@ def p_array_pairs(p):
     if len(p) == 2:
         p[0] = [p[1]]
     elif len(p) == 3:
-        p[0] = p[1]  # coma final opcional
+        p[0] = p[1]
     else:
         p[1].append(p[3]); p[0] = p[1]
 
