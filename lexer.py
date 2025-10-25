@@ -1,8 +1,12 @@
 """Analizador Léxico para un subconjunto de PHP."""
 from dataclasses import dataclass, field
-from typing import ClassVar, Dict, Iterator, Tuple
+from typing import Callable, ClassVar, Dict, Iterator, Tuple
 
 import ply.lex as lex
+
+
+def _default_reporter(level: str, message: str) -> None:
+    print(message)
 
 
 @dataclass(frozen=True)
@@ -68,9 +72,11 @@ class LexerConfig:
 @dataclass
 class PhpLexer:
     config: LexerConfig = field(default_factory=LexerConfig)
+    reporter: Callable[[str, str], None] | None = None
     tokens: Tuple[str, ...] = field(init=False)
     reserved: Dict[str, str] = field(init=False)
     lexer: lex.Lexer = field(init=False)
+    error_count: int = field(init=False, default=0)
 
     t_ignore: ClassVar[str] = ' \t\r'
     t_PLUS: ClassVar[str] = r'\+'
@@ -99,6 +105,24 @@ class PhpLexer:
         self.reserved = self.config.reserved
         self.tokens = self.config.full_token_list()
         self.lexer = lex.lex(module=self)
+        self._reporter = self.reporter or _default_reporter
+        original_input = self.lexer.input
+
+        def _input_with_reset(data: str, *args, **kwargs):
+            self.reset_errors()
+            return original_input(data, *args, **kwargs)
+
+        self.lexer.input = _input_with_reset  # type: ignore[assignment]
+
+    def reset_errors(self) -> None:
+        self.error_count = 0
+
+    def _emit(self, message: str, level: str = "error") -> None:
+        self._reporter(level, message)
+
+    def _report_lex_error(self, message: str) -> None:
+        self.error_count += 1
+        self._emit(message, level="error")
 
     def t_PHP_OPEN(self, t):
         r'<\?php'
@@ -164,7 +188,9 @@ class PhpLexer:
 
     def t_ID_INVALID(self, t):
         r'\d+[A-Za-z_][A-Za-z0-9_]*'
-        print(f"[Lexer] Error lexico en linea {t.lexer.lineno}: identificador no válido {t.value!r}")
+        self._report_lex_error(
+            f"Error léxico en linea {t.lexer.lineno}: identificador no válido {t.value!r}",
+        )
         return None
 
     def t_NUMBER(self, t):
@@ -184,7 +210,9 @@ class PhpLexer:
 
     def t_VARIABLE_INVALID(self, t):
         r'\$(?:[ \t]+[A-Za-z_][A-Za-z0-9_]*|[^A-Za-z_\s][^\s]*)'
-        print(f"[Lexer] Error lexico en linea {t.lexer.lineno}: identificador de variable no válido {t.value!r}")
+        self._report_lex_error(
+            f"Error léxico en linea {t.lexer.lineno}: identificador de variable no válido {t.value!r}",
+        )
         return None
 
     def t_VARIABLE(self, t):
@@ -211,7 +239,9 @@ class PhpLexer:
         t.lexer.lineno += len(t.value)
 
     def t_error(self, t):
-        print(f"[Lexer] Error lexico en linea {t.lexer.lineno}: caracter inesperado {repr(t.value[0])}")
+        self._report_lex_error(
+            f"Error léxico en linea {t.lexer.lineno}: caracter inesperado {repr(t.value[0])}",
+        )
         t.lexer.skip(1)
 
     def tokenize(self, data: str) -> Iterator[lex.LexToken]:
@@ -225,39 +255,3 @@ class PhpLexer:
     def print_tokens(self, data: str) -> None:
         for token in self.tokenize(data):
             print(token)
-
-
-def main() -> None:
-    lexer = PhpLexer()
-    demo = r'''
-<?php
-namespace Demo;
-
-use Lib\Utils;
-
-class Foo {
-    public function bar($x, $y) {
-        $msg = "Hola\n";
-        $a = 1 + 2 * 3;
-        $ok = ($a === 7) && !false || ($x != $y);
-        $arr = ["k1" => 10, "k2" => 20];
-        echo $msg . ' Mundo';
-        // comentario de linea
-        # otro comentario de linea
-        /* bloque
-           de comentario */
-        if ($ok) {
-            return $arr['k1'] + $a;
-        } else {
-            return null;
-        }
-    }
-}
-?>
-'''
-    print("=== TOKENS ===")
-    lexer.print_tokens(demo)
-
-
-if __name__ == '__main__':
-    main()

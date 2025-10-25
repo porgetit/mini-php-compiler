@@ -5,7 +5,8 @@ import argparse
 import sys
 import json
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import Any, Callable, Mapping, Sequence
 
 from rich import box
 from rich.console import Console
@@ -18,7 +19,7 @@ from rich_argparse import RichHelpFormatter
 
 class _BoundHelpFormatter(RichHelpFormatter):
     def __init__(self, prog: str, console: Console) -> None:
-        super().__init__(prog, console=console, show_metavar_column=True)
+        super().__init__(prog, console=console)
 
 
 class _RichArgumentParser(argparse.ArgumentParser):
@@ -41,10 +42,12 @@ class _RichArgumentParser(argparse.ArgumentParser):
         if not message:
             return
         target = self._output.console if file in (None, sys.stdout) else self._output.err_console
-        if isinstance(message, str) and message.endswith("\n"):
-            target.print(message, soft_wrap=True, end="")
+        stream = target.file if hasattr(target, "file") else sys.stdout
+        if isinstance(message, str):
+            stream.write(message)
         else:
-            target.print(message, soft_wrap=True)
+            stream.write(str(message))
+        stream.flush()
 
     def error(self, message: str) -> None:
         usage = self.format_usage()
@@ -149,13 +152,61 @@ class RichCompilerConsole:
             level="info",
         )
 
-    def show_summary(self, error_count: int) -> None:
+    def show_summary(self, syntax_errors: int, lexical_errors: int = 0) -> None:
         """Imprime el resumen final de errores detectados."""
-        level = "success" if error_count == 0 else "error"
-        plural = "error" if error_count == 1 else "errores"
-        text = f"Total de errores sintacticos detectados: {error_count} {plural}"
-        self.message(text, level=level, stderr=error_count > 0)
+
+        def _emit_summary(label: str, count: int) -> None:
+            level = "success" if count == 0 else "error"
+            plural = "error" if count == 1 else "errores"
+            text = f"Total de errores {label} detectados: {count} {plural}"
+            self.message(text, level=level, stderr=count > 0)
+
+        _emit_summary("lexicos", lexical_errors)
+        _emit_summary("sintacticos", syntax_errors)
+        _emit_summary("", lexical_errors + syntax_errors)
 
     def create_argument_parser(self, **kwargs: Any) -> argparse.ArgumentParser:
         """Construye un ArgumentParser que renderiza ayuda y errores con Rich."""
         return _RichArgumentParser(self, **kwargs)
+
+    def make_reporter(self) -> Callable[[str, str], None]:
+        """Devuelve un callback compatible con los emisores del lexer y parser."""
+        def reporter(level: str, message: str) -> None:
+            self.message(message, level=level, stderr=(level == "error"))
+
+        return reporter
+
+
+@dataclass
+class BufferedReporter:
+    console: "RichCompilerConsole"
+    lexical_messages: list[tuple[str, str]] = field(default_factory=list)
+    syntax_messages: list[tuple[str, str]] = field(default_factory=list)
+
+    def make_lexical_reporter(self) -> Callable[[str, str], None]:
+        return self._make_bucket_reporter(self.lexical_messages)
+
+    def make_syntax_reporter(self) -> Callable[[str, str], None]:
+        return self._make_bucket_reporter(self.syntax_messages)
+
+    def _make_bucket_reporter(
+        self,
+        bucket: list[tuple[str, str]],
+    ) -> Callable[[str, str], None]:
+        def reporter(level: str, message: str) -> None:
+            bucket.append((level, message))
+
+        return reporter
+
+    def flush(self) -> None:
+        self._drain(self.lexical_messages)
+        self._drain(self.syntax_messages)
+
+    def clear(self) -> None:
+        self.lexical_messages.clear()
+        self.syntax_messages.clear()
+
+    def _drain(self, bucket: list[tuple[str, str]]) -> None:
+        for level, message in bucket:
+            self.console.message(message, level=level, stderr=(level == "error"))
+        bucket.clear()

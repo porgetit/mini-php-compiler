@@ -18,7 +18,7 @@ import shutil
 from lexer import PhpLexer
 from parser import build_parser
 from datetime import datetime
-from output_formatter import RichCompilerConsole
+from output_formatter import RichCompilerConsole, BufferedReporter
 
 
 def _load_source(path: Path, formatter: RichCompilerConsole) -> str:
@@ -32,8 +32,8 @@ def _load_source(path: Path, formatter: RichCompilerConsole) -> str:
         raise SystemExit(1)
 
 
-def _collect_tokens(code: str) -> List[dict]:
-    lexer = PhpLexer()
+def _collect_tokens(code: str, reporter=None) -> List[dict]:
+    lexer = PhpLexer(reporter=reporter)
     tokens = []
     for token in lexer.tokenize(code):
         tokens.append(
@@ -52,10 +52,11 @@ def _to_serializable(obj: Any) -> Any:
     return obj
 
 
-def _parse(code: str):
-    parser = build_parser()
-    ast = parser.parse(code, lexer=PhpLexer().lexer)
-    return ast, parser
+def _parse(code: str, *, lexical_reporter=None, syntax_reporter=None):
+    parser = build_parser(reporter=syntax_reporter)
+    parse_lexer = PhpLexer(reporter=lexical_reporter)
+    ast = parser.parse(code, lexer=parse_lexer.lexer)
+    return ast, parser, parse_lexer.error_count
 
 
 def _write_verbose_artifacts(
@@ -99,6 +100,9 @@ def _write_verbose_artifacts(
 
 def main(argv: Sequence[str] | None = None) -> int:
     output = RichCompilerConsole()
+    buffered_reporter = BufferedReporter(output)
+    lexical_reporter = buffered_reporter.make_lexical_reporter()
+    syntax_reporter = buffered_reporter.make_syntax_reporter()
     cli_parser = output.create_argument_parser(
         description="Compilador reducido de PHP: lexing + parsing."
     )
@@ -127,18 +131,23 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     tokens_data: List[dict] | None = None
     if args.tokens or args.verbose:
-        tokens_data = _collect_tokens(code)
+        tokens_data = _collect_tokens(code, reporter=lexical_reporter)
         if args.tokens:
             output.show_tokens(tokens_data)
 
-    ast, parser_obj = _parse(code)
-    error_count = getattr(parser_obj, "error_count", 0)
+    ast, parser_obj, lexical_error_count = _parse(
+        code,
+        lexical_reporter=lexical_reporter,
+        syntax_reporter=syntax_reporter,
+    )
+    syntax_error_count = getattr(parser_obj, "error_count", 0)
+    has_errors = (syntax_error_count > 0) or (lexical_error_count > 0)
 
-    if error_count:
-        output.message("Se encontraron errores durante el parseo.", level="error", stderr=True)
+    if has_errors:
+        output.message("Se encontraron errores durante el analisis.", level="error", stderr=True)
         if args.verbose:
             if tokens_data is None:
-                tokens_data = _collect_tokens(code)
+                tokens_data = _collect_tokens(code, reporter=lexical_reporter)
             json_path = _write_verbose_artifacts(
                 source_path,
                 tokens_data,
@@ -146,7 +155,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 formatter=output,
             )
             output.show_verbose_artifact(json_path)
-        output.show_summary(error_count)
+        buffered_reporter.flush()
+        output.show_summary(syntax_error_count, lexical_error_count)
         return 1
 
     output.message("Parseo completado correctamente.", level="success")
@@ -157,7 +167,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.verbose:
         if tokens_data is None:
-            tokens_data = _collect_tokens(code)
+            tokens_data = _collect_tokens(code, reporter=lexical_reporter)
         json_path = _write_verbose_artifacts(
             source_path,
             tokens_data,
@@ -166,7 +176,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         output.show_verbose_artifact(json_path)
 
-    output.show_summary(error_count)
+    buffered_reporter.flush()
+    output.show_summary(syntax_error_count, lexical_error_count)
     return 0
 
 

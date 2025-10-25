@@ -5,11 +5,11 @@ use Lib\Utils;
 
 class Greeter {
     public function greet($nombre = "visitante") {
-        $saludo = "Hola " . $nombre;
-        echo $saludo;
+        $0saludo = "Hola " . $0nombre;
+        echo $0saludo;
     }
 }
 
 $g = new Greeter();
-$g->greet();
+$g->greet()
 ?>

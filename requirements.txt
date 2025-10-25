@@ -1,2 +1,4 @@
 ply==3.11
 pytest==8.4.2
+rich==13.9.2
+rich-argparse==1.7.1

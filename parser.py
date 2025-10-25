@@ -1,12 +1,73 @@
 """Parser para un subconjunto de PHP."""
 from __future__ import annotations
-from typing import List, Optional
+
+import sys
+from dataclasses import dataclass, field
+from typing import Any, Callable, List, Optional
+
 import ply.yacc as yacc
 
 from lexer import LexerConfig, PhpLexer
 from ast_nodes import *
 
 tokens = LexerConfig().full_token_list()
+
+
+def _default_reporter(level: str, message: str) -> None:
+    print(message)
+
+
+@dataclass
+class SyntaxErrorInfo:
+    message: str
+    token_type: Optional[str]
+    token_value: Optional[str]
+    lineno: Optional[int]
+
+
+@dataclass
+class ParserState:
+    errors: List[SyntaxErrorInfo] = field(default_factory=list)
+    parser: Any | None = None
+    reporter: Callable[[str, str], None] | None = None
+
+
+_CURRENT_STATE: ParserState | None = None
+_RECOVERY_TOKENS = {"SEMICOLON", "RBRACE", "PHP_CLOSE"}
+
+
+def _set_parser_state(state: ParserState | None) -> None:
+    """Hace accesible el estado actual al manejador de errores del parser."""
+    global _CURRENT_STATE
+    _CURRENT_STATE = state
+
+
+def _register_syntax_error(info: SyntaxErrorInfo) -> None:
+    if _CURRENT_STATE is not None:
+        _CURRENT_STATE.errors.append(info)
+
+
+def _emit_parser_message(level: str, message: str) -> None:
+    if _CURRENT_STATE is not None and _CURRENT_STATE.reporter is not None:
+        _CURRENT_STATE.reporter(level, message)
+    else:
+        _default_reporter(level, message)
+
+
+def _recover_parser() -> None:
+    """Consume tokens hasta un punto seguro para continuar el análisis."""
+    if _CURRENT_STATE is None or _CURRENT_STATE.parser is None:
+        return
+
+    parser = _CURRENT_STATE.parser
+    while True:
+        next_tok = parser.token()
+        if not next_tok:
+            break
+        if next_tok.type in _RECOVERY_TOKENS:
+            break
+    parser.errok()
+
 
 # === PRECEDENCIAS (de menor a mayor) ===
 precedence = (
@@ -455,13 +516,56 @@ def p_empty(p):
 
 def p_error(tok):
     if tok:
-        print(f"[Parser] Error de sintaxis en token {tok.type} ({tok.value!r}) en línea desconocida")
-    else:
-        print("[Parser] Error de sintaxis: fin de entrada inesperado")
+        lineno = getattr(tok, "lineno", None)
+        lineno_txt = str(lineno) if lineno is not None else "desconocida"
+        message = (
+            f"Error de sintaxis en línea {lineno_txt}"
+        )
+        _emit_parser_message("error", message)
+        _register_syntax_error(
+            SyntaxErrorInfo(
+                message=message,
+                token_type=tok.type,
+                token_value=repr(tok.value),
+                lineno=lineno,
+            )
+        )
+        _recover_parser()
+        return
+
+class ParserWrapper:
+    """Envoltura alrededor del parser PLY para manejar el estado y los errores."""
+    def __init__(self, debug: bool = False, reporter: Callable[[str, str], None] | None = None):
+        self._debug = debug
+        self._reporter = reporter or _default_reporter
+        self._parser = yacc.yacc(
+            module=sys.modules[__name__],
+            start='program',
+            debug=debug,
+            write_tables=False,
+        )
+        self.errors: List[SyntaxErrorInfo] = []
+        self.error_count: int = 0
+
+    def parse(self, source: str, lexer) -> Optional[Program]:
+        state = ParserState(parser=self._parser, reporter=self._reporter)
+        _set_parser_state(state)
+        try:
+            result = self._parser.parse(source, lexer=lexer, tracking=True)
+        finally:
+            _set_parser_state(None)
+
+        self.errors = state.errors
+        self.error_count = len(self.errors)
+        if self.error_count:
+            return None
+        return result
+
 
 # === CONSTRUCCIÓN DEL PARSER ===
-def build_parser(debug: bool=False):
-    return yacc.yacc(start='program', debug=debug)
+def build_parser(debug: bool = False, reporter: Callable[[str, str], None] | None = None):
+    return ParserWrapper(debug=debug, reporter=reporter)
+
 
 # === PEQUEÑA FUNCIÓN DE UTILIDAD PARA PROBAR RÁPIDO ===
 def parse_php(code: str):
