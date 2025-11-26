@@ -7,8 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from lexer import PhpLexer
-from parser import build_parser
+from backend.lexer import PhpLexer
+from backend.parser import build_parser
 
 
 @pytest.fixture()

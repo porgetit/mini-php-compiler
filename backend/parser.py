@@ -7,8 +7,8 @@ from typing import Any, Callable, List, Optional
 
 import ply.yacc as yacc
 
-from lexer import LexerConfig, PhpLexer
-from ast_nodes import *
+from .lexer import LexerConfig, PhpLexer
+from .ast_nodes import *
 
 tokens = LexerConfig().full_token_list()
 
@@ -77,6 +77,7 @@ precedence = (
     ('left', 'LT', 'LE', 'GT', 'GE'),
     ('left', 'PLUS', 'MINUS', 'CONCAT'),
     ('left', 'TIMES', 'DIVIDE', 'MOD'),
+    ('right', 'QUESTION', 'COLON'),
     ('right', 'NOT'),
     ('right', 'UMINUS', 'UPLUS'),         # unarios
     ('right', 'INC', 'DEC'),              # prefijos
@@ -334,12 +335,20 @@ def p_expr(p):
     p[0] = p[1]
 
 def p_assign(p):
-    """assign : logic_or
+    """assign : conditional
               | postfix ASSIGN assign"""
     if len(p) == 2:
         p[0] = p[1]
     else:
         p[0] = Assign(p[1], p[3])
+
+def p_conditional(p):
+    """conditional : logic_or QUESTION expr COLON conditional
+                   | logic_or"""
+    if len(p) == 6:
+        p[0] = Ternary(p[1], p[3], p[5])
+    else:
+        p[0] = p[1]
 
 def p_logic_or(p):
     """logic_or : logic_or OR logic_and
@@ -518,9 +527,7 @@ def p_error(tok):
     if tok:
         lineno = getattr(tok, "lineno", None)
         lineno_txt = str(lineno) if lineno is not None else "desconocida"
-        message = (
-            f"Error de sintaxis en línea {lineno_txt}"
-        )
+        message = f"[Parser] Error de sintaxis en token {tok.type} (linea {lineno_txt})"
         _emit_parser_message("error", message)
         _register_syntax_error(
             SyntaxErrorInfo(

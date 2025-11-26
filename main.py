@@ -1,185 +1,29 @@
-"""Punto de entrada principal para el mini compilador de PHP.
-
-Proporciona una interfaz de linea de comandos que permite:
-  * Imprimir los tokens generados por el lexer.
-  * Construir el AST mediante el parser.
-  * Mostrar el AST resultante en formato JSON opcionalmente.
-"""
+"""Punto de entrada de la aplicacion GUI con PyWebView."""
 from __future__ import annotations
 
-import argparse
-import json
-import sys
-from dataclasses import asdict, is_dataclass
 from pathlib import Path
-from typing import Any, List, Sequence
 
-import shutil
-from lexer import PhpLexer
-from parser import build_parser
-from datetime import datetime
-from output_formatter import RichCompilerConsole, BufferedReporter
+import webview
+
+from backend.api import BackendAPI
 
 
-def _load_source(path: Path, formatter: RichCompilerConsole) -> str:
-    if not path.exists():
-        formatter.message(f"No se encontro el archivo: {path}", level="error", stderr=True)
-        raise SystemExit(1)
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError as exc:
-        formatter.message(f"Error al leer {path}: {exc}", level="error", stderr=True)
-        raise SystemExit(1)
-
-
-def _collect_tokens(code: str, reporter=None) -> List[dict]:
-    lexer = PhpLexer(reporter=reporter)
-    tokens = []
-    for token in lexer.tokenize(code):
-        tokens.append(
-            {"lineno": token.lineno, "type": token.type, "value": token.value}
-        )
-    return tokens
-
-
-def _to_serializable(obj: Any) -> Any:
-    if is_dataclass(obj):
-        return {key: _to_serializable(val) for key, val in asdict(obj).items()}
-    if isinstance(obj, list):
-        return [_to_serializable(item) for item in obj]
-    if isinstance(obj, tuple):
-        return [_to_serializable(item) for item in obj]
-    return obj
-
-
-def _parse(code: str, *, lexical_reporter=None, syntax_reporter=None):
-    parser = build_parser(reporter=syntax_reporter)
-    parse_lexer = PhpLexer(reporter=lexical_reporter)
-    ast = parser.parse(code, lexer=parse_lexer.lexer)
-    return ast, parser, parse_lexer.error_count
-
-
-def _write_verbose_artifacts(
-    source_path: Path,
-    tokens: List[dict],
-    ast_obj: Any,
-    formatter: RichCompilerConsole | None = None,
-) -> Path:
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    try:
-        relative = source_path.resolve().relative_to(Path.cwd())
-    except ValueError:
-        relative = Path(source_path.name)
-    base_dir = Path("reportes") / relative
-    base_dir.mkdir(parents=True, exist_ok=True)
-
-    destination_source = base_dir / source_path.name
-    try:
-        if source_path.resolve() != destination_source.resolve():
-            shutil.copy2(source_path, destination_source)
-        else:
-            destination_source.write_text(source_path.read_text(encoding="utf-8"))
-    except OSError as exc:
-        message = f"No se pudo copiar el archivo fuente: {exc}"
-        if formatter is not None:
-            formatter.message(message, level="warning", stderr=True)
-        else:
-            print(f"[Main] {message}", file=sys.stderr)
-
-    payload = {
-        "timestamp": timestamp,
-        "source": str(source_path),
-        "tokens": tokens,
-        "ast": _to_serializable(ast_obj) if ast_obj is not None else None,
-        "parse_success": ast_obj is not None,
-    }
-    json_path = base_dir / f"{timestamp}.json"
-    json_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
-    return json_path
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    output = RichCompilerConsole()
-    buffered_reporter = BufferedReporter(output)
-    lexical_reporter = buffered_reporter.make_lexical_reporter()
-    syntax_reporter = buffered_reporter.make_syntax_reporter()
-    cli_parser = output.create_argument_parser(
-        description="Compilador reducido de PHP: lexing + parsing."
+def launch() -> None:
+    project_root = Path(__file__).parent
+    index_html = project_root / "frontend" / "index.html"
+    api = BackendAPI(project_root)
+    window = webview.create_window(
+        "Mini PHP Compiler GUI",
+        url=index_html.as_uri(),
+        js_api=api,
+        width=1280,
+        height=860,
+        min_size=(1024, 700),
     )
-    cli_parser.add_argument(
-        "fuente",
-        help="Ruta al archivo PHP que se desea analizar.",
-    )
-    cli_parser.add_argument(
-        "--tokens",
-        action="store_true",
-        help="Imprime la secuencia de tokens generados por el lexer.",
-    )
-    cli_parser.add_argument(
-        "--ast",
-        action="store_true",
-        help="Muestra el AST resultante en formato JSON.",
-    )
-    cli_parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Guarda tokens y AST en un artefacto JSON junto con el archivo fuente.",
-    )
-    args = cli_parser.parse_args(argv)
-    source_path = Path(args.fuente)
-    code = _load_source(source_path, output)
-
-    tokens_data: List[dict] | None = None
-    if args.tokens or args.verbose:
-        tokens_data = _collect_tokens(code, reporter=lexical_reporter)
-        if args.tokens:
-            output.show_tokens(tokens_data)
-
-    ast, parser_obj, lexical_error_count = _parse(
-        code,
-        lexical_reporter=lexical_reporter,
-        syntax_reporter=syntax_reporter,
-    )
-    syntax_error_count = getattr(parser_obj, "error_count", 0)
-    has_errors = (syntax_error_count > 0) or (lexical_error_count > 0)
-
-    if has_errors:
-        output.message("Se encontraron errores durante el analisis.", level="error", stderr=True)
-        if args.verbose:
-            if tokens_data is None:
-                tokens_data = _collect_tokens(code, reporter=lexical_reporter)
-            json_path = _write_verbose_artifacts(
-                source_path,
-                tokens_data,
-                ast,
-                formatter=output,
-            )
-            output.show_verbose_artifact(json_path)
-        buffered_reporter.flush()
-        output.show_summary(syntax_error_count, lexical_error_count)
-        return 1
-
-    output.message("Parseo completado correctamente.", level="success")
-
-    if args.ast:
-        serializable = _to_serializable(ast)
-        output.show_ast(serializable)
-
-    if args.verbose:
-        if tokens_data is None:
-            tokens_data = _collect_tokens(code, reporter=lexical_reporter)
-        json_path = _write_verbose_artifacts(
-            source_path,
-            tokens_data,
-            ast,
-            formatter=output,
-        )
-        output.show_verbose_artifact(json_path)
-
-    buffered_reporter.flush()
-    output.show_summary(syntax_error_count, lexical_error_count)
-    return 0
+    api.bind_window(window)
+    # Nota: debug=False evita el ruido en consola generado por WebView2/pywebview.
+    webview.start(debug=False)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    launch()

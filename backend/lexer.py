@@ -1,4 +1,4 @@
-"""Analizador Léxico para un subconjunto de PHP."""
+"""Analizador lexico para un subconjunto de PHP."""
 from dataclasses import dataclass, field
 from typing import Callable, ClassVar, Dict, Iterator, Tuple
 
@@ -189,7 +189,7 @@ class PhpLexer:
     def t_ID_INVALID(self, t):
         r'\d+[A-Za-z_][A-Za-z0-9_]*'
         self._report_lex_error(
-            f"Error léxico en linea {t.lexer.lineno}: identificador no válido {t.value!r}",
+            f"[Lexer] Error lexico en linea {t.lexer.lineno}: identificador no valido {t.value!r}",
         )
         return None
 
@@ -211,7 +211,7 @@ class PhpLexer:
     def t_VARIABLE_INVALID(self, t):
         r'\$(?:[ \t]+[A-Za-z_][A-Za-z0-9_]*|[^A-Za-z_\s][^\s]*)'
         self._report_lex_error(
-            f"Error léxico en linea {t.lexer.lineno}: identificador de variable no válido {t.value!r}",
+            f"[Lexer] Error lexico en linea {t.lexer.lineno}: identificador de variable no valido {t.value!r}",
         )
         return None
 
@@ -240,7 +240,7 @@ class PhpLexer:
 
     def t_error(self, t):
         self._report_lex_error(
-            f"Error léxico en linea {t.lexer.lineno}: caracter inesperado {repr(t.value[0])}",
+            f"[Lexer] Error lexico en linea {t.lexer.lineno}: caracter inesperado {repr(t.value[0])}",
         )
         t.lexer.skip(1)
 

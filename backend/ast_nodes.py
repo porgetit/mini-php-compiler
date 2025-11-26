@@ -170,3 +170,10 @@ class StaticAccess:
 class New:
     class_name: Name
     args: List[Expr]
+
+# --- expresiones adicionales ---
+@dataclass
+class Ternary:
+    cond: Expr
+    if_true: Expr
+    if_false: Expr
