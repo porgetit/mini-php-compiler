@@ -5,11 +5,17 @@ use Lib\Utils;
 
 class Greeter {
     public function greet($nombre = "visitante") {
-        $0saludo = "Hola " . $0nombre;
-        echo $0saludo;
+        $saludo = "Hola " . $nombre;
+        echo $saludo;
+    }
+
+    private function helper() {
+        // Función auxiliar
     }
 }
 
-$g = new Greeter();
-$g->greet()
+function test() {
+    $greeter = new Greeter();
+    $greeter->greet("Mundo");
+}
 ?>

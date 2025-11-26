@@ -216,12 +216,13 @@ def p_stmt(p):
             | while_stmt
             | for_stmt
             | foreach_stmt
-            | block"""
+            | block
+            | function_decl"""
     if p.slice[1].type == 'SEMICOLON':
         p[0] = EmptyStmt()
     elif isinstance(p[1], Block):
         p[0] = p[1]
-    elif isinstance(p[1], (EchoStmt, PrintStmt, ReturnStmt, IncludeStmt, RequireStmt, IfStmt, WhileStmt, ForStmt, ForeachStmt, VarDeclStmt)):
+    elif isinstance(p[1], (EchoStmt, PrintStmt, ReturnStmt, IncludeStmt, RequireStmt, IfStmt, WhileStmt, ForStmt, ForeachStmt, VarDeclStmt, FunctionDecl)):
         p[0] = p[1]
     else:
         p[0] = ExprStmt(p[1])
