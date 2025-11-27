@@ -41,6 +41,7 @@ export function renderMessages(result) {
   const combined = [
     ...(result.lexical_messages || []).map((m) => ({ ...m, bucket: 'Lexico' })),
     ...(result.syntax_messages || []).map((m) => ({ ...m, bucket: 'Sintactico' })),
+    ...(result.semantic_messages || []).map((m) => ({ ...m, bucket: 'Semantico' })),
   ];
   els.messagesBox.innerHTML = '';
 
@@ -85,10 +86,10 @@ export function renderAst(astJson) {
 }
 
 export function updateSummary(result) {
-  const total = (result.lexical_errors || 0) + (result.syntax_errors || 0);
+  const total = (result.lexical_errors || 0) + (result.syntax_errors || 0) + (result.semantic_errors || 0);
   const color = total === 0 ? 'text-success' : 'text-warning';
   els.summaryLabel.className = `small ${color}`;
-  els.summaryLabel.textContent = `Errores -> Lexico: ${result.lexical_errors} | Sintactico: ${result.syntax_errors}`;
+  els.summaryLabel.textContent = `Errores -> Lexico: ${result.lexical_errors} | Sintactico: ${result.syntax_errors} | Semantico: ${result.semantic_errors}`;
 }
 
 export function showError(message) {
@@ -96,10 +97,11 @@ export function showError(message) {
 }
 
 export function resetOutputs() {
-  renderMessages({ lexical_messages: [], syntax_messages: [] });
+  renderMessages({ lexical_messages: [], syntax_messages: [], semantic_messages: [] });
   renderTokens([]);
   renderAst(null);
   els.summaryLabel.textContent = 'Sin ejecuciones';
+  renderSemantic([], { errors: 0, lexical: 0, syntax: 0 });
 }
 
 export function resetEditorToSample() {
@@ -123,4 +125,63 @@ export function updateLineNumbers() {
 
 export function syncLineNumbersScroll() {
   els.lineNumbers.scrollTop = els.editor.scrollTop;
+}
+
+export function renderSemantic(messages, counts, symbolTable = []) {
+  const container = els.semanticMessages;
+  const errors = counts?.errors ?? messages?.length ?? 0;
+  const lex = counts?.lexical ?? 0;
+  const syn = counts?.syntax ?? 0;
+  const ok = errors === 0 && lex === 0 && syn === 0;
+  els.semanticSummary.textContent = ok
+    ? 'Sin errores semanticos'
+    : `Semantico: ${errors} | Lexico: ${lex} | Sintactico: ${syn}`;
+
+  container.innerHTML = '';
+  if (!messages || messages.length === 0) {
+    container.innerHTML = '<div class="text-secondary">Sin mensajes semanticos.</div>';
+  } else {
+    const list = document.createElement('ul');
+    list.className = 'list-unstyled mb-0';
+    messages.forEach((m) => {
+      const lineTxt = typeof m.lineno === 'number' ? `Linea ${m.lineno}` : '';
+      const level = (m.level || 'info').toUpperCase();
+      const li = document.createElement('li');
+      li.className = 'py-2 border-bottom';
+      li.innerHTML = `
+        <div class="d-flex align-items-center justify-content-between">
+          <span class="badge text-bg-${m.level === 'error' ? 'danger' : 'secondary'}">Semantico</span>
+          <span class="text-secondary small">${lineTxt}</span>
+        </div>
+        <div class="mt-1 small">${level}: ${m.message}</div>
+      `;
+      list.appendChild(li);
+    });
+    container.appendChild(list);
+  }
+
+  // Render tabla de simbolos
+  const tbody = els.symbolTableBody;
+  if (!symbolTable || symbolTable.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-secondary">Sin tabla de simbolos</td></tr>';
+    return;
+  }
+  const rows = [];
+  symbolTable.forEach((scope) => {
+    const scopeId = scope.scope ?? 0;
+    (scope.symbols || []).forEach((sym) => {
+      const line = typeof sym.lineno === 'number' ? sym.lineno : '';
+      rows.push(`
+        <tr>
+          <td class="text-secondary">${scopeId}</td>
+          <td>${sym.name}</td>
+          <td class="text-light">${sym.type ?? ''}</td>
+          <td class="text-info">${sym.kind}</td>
+          <td class="text-secondary">${sym.value ?? ''}</td>
+          <td class="text-secondary">${line}</td>
+        </tr>
+      `);
+    });
+  });
+  tbody.innerHTML = rows.join('') || '<tr><td colspan="6" class="text-center text-secondary">Sin simbolos</td></tr>';
 }

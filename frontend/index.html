@@ -230,11 +230,28 @@
                 <div class="d-flex align-items-center justify-content-between mb-2">
                   <div>
                     <div class="fw-semibold">Analisis semantico</div>
-                    <small class="text-secondary">Gancho listo para la etapa semantica.</small>
+                    <small class="text-secondary" id="semantic-summary">Sin ejecutar</small>
                   </div>
-                  <button class="btn btn-sm btn-outline-info" id="semantic-btn">Probar</button>
+                  <button class="btn btn-sm btn-outline-info" id="semantic-btn">Analizar</button>
                 </div>
-                <div id="semantic-result" class="small text-secondary">Pendiente de implementacion.</div>
+                <div id="semantic-messages" class="small text-secondary mb-3">Pendiente de implementacion.</div>
+                <div class="table-responsive">
+                  <table class="table table-sm table-dark align-middle">
+                    <thead>
+                      <tr>
+                        <th>Scope</th>
+                        <th>Nombre</th>
+                        <th>Tipo</th>
+                        <th>Kind</th>
+                        <th>Valor</th>
+                        <th>Linea</th>
+                      </tr>
+                    </thead>
+                    <tbody id="symbol-table-body">
+                      <tr><td colspan="6" class="text-center text-secondary">Sin tabla de simbolos</td></tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>

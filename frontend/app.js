@@ -16,6 +16,7 @@ import {
   initEditorContent,
   updateLineNumbers,
   syncLineNumbersScroll,
+  renderSemantic,
 } from './ui.js';
 import { backendApi } from './backend.js';
 
@@ -94,6 +95,11 @@ async function handleRunCompiler() {
     renderMessages(result);
     renderTokens(result.tokens);
     renderAst(result.ast_json);
+    renderSemantic(result.semantic_messages, {
+      errors: result.semantic_errors,
+      lexical: result.lexical_errors,
+      syntax: result.syntax_errors,
+    }, result.symbol_table);
     updateSummary(result);
     setStatus(result.ok ? 'Compilacion exitosa' : 'Compilacion con errores', result.ok ? 'success' : 'warning');
   } catch (err) {
@@ -106,11 +112,22 @@ async function handleRunCompiler() {
 
 async function handleSemanticPreview() {
   try {
-    els.semanticResult.textContent = 'Ejecutando preview...';
+    renderSemantic([], { errors: 0, lexical: 0, syntax: 0 });
+    els.semanticSummary.textContent = 'Analizando...';
     const result = await backendApi.semanticPreview(els.editor.value);
-    els.semanticResult.textContent = result.message || (result.ok ? 'Listo' : 'No implementado aun.');
+    const mergedMessages = [
+      ...(result.lexical_messages || []),
+      ...(result.syntax_messages || []),
+      ...(result.semantic_messages || []),
+    ];
+    renderSemantic(mergedMessages, {
+      errors: result.semantic_errors,
+      lexical: result.lexical_errors,
+      syntax: result.syntax_errors,
+    }, result.symbol_table);
   } catch (err) {
-    els.semanticResult.textContent = `Error: ${err}`;
+    els.semanticSummary.textContent = 'Error al analizar';
+    els.semanticMessages.textContent = `Error: ${err}`;
   }
 }
 
@@ -121,6 +138,20 @@ function wireEvents() {
   els.buttons.run.addEventListener('click', handleRunCompiler);
   els.buttons.newFile.addEventListener('click', resetEditorToSample);
   els.buttons.semantic.addEventListener('click', handleSemanticPreview);
+  // Insertar 4 espacios al presionar Tab en el editor
+  els.editor.addEventListener('keydown', (evt) => {
+    if (evt.key === 'Tab') {
+      evt.preventDefault();
+      const start = els.editor.selectionStart;
+      const end = els.editor.selectionEnd;
+      const value = els.editor.value;
+      const indent = '    ';
+      els.editor.value = value.slice(0, start) + indent + value.slice(end);
+      els.editor.selectionStart = els.editor.selectionEnd = start + indent.length;
+      markDirty();
+      updateLineNumbers();
+    }
+  });
   const updateOnChange = () => {
     markDirty();
     updateLineNumbers();
@@ -137,7 +168,6 @@ function start() {
   wireEvents();
   markClean();
   resetOutputs();
-  els.semanticResult.textContent = 'Pendiente de implementacion.';
 }
 
 if (window.pywebview) {

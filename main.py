@@ -1,6 +1,7 @@
 """Punto de entrada de la aplicacion GUI con PyWebView."""
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import webview
@@ -8,9 +9,15 @@ import webview
 from backend.api import BackendAPI
 
 
+def _resource_path(relative: str) -> Path:
+    """Localiza recursos tanto en modo normal como congelado (PyInstaller)."""
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+    return base / relative
+
+
 def launch() -> None:
-    project_root = Path(__file__).parent
-    index_html = project_root / "frontend" / "index.html"
+    project_root = _resource_path("")  # raiz del proyecto o temp en _MEIPASS
+    index_html = _resource_path("frontend/index.html")
     api = BackendAPI(project_root)
     window = webview.create_window(
         "Mini PHP Compiler GUI",

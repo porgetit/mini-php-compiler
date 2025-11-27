@@ -7,7 +7,9 @@ export const els = {
   messagesBox: document.getElementById('messages'),
   tokensBody: document.getElementById('tokens-body'),
   astPre: document.getElementById('ast-pre'),
-  semanticResult: document.getElementById('semantic-result'),
+  semanticMessages: document.getElementById('semantic-messages'),
+  semanticSummary: document.getElementById('semantic-summary'),
+  symbolTableBody: document.getElementById('symbol-table-body'),
   buttons: {
     open: document.getElementById('open-btn'),
     save: document.getElementById('save-btn'),

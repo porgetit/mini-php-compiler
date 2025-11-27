@@ -7,8 +7,8 @@ from typing import Any, Callable, List, Optional
 
 import ply.yacc as yacc
 
-from .lexer import LexerConfig, PhpLexer
-from .ast_nodes import *
+from ..lexer import LexerConfig, PhpLexer
+from ..ast_nodes import *
 
 tokens = LexerConfig().full_token_list()
 
@@ -129,6 +129,7 @@ def p_use_name_list(p):
 def p_class_decl(p):
     """class_decl : CLASS ID LBRACE class_members_opt RBRACE"""
     p[0] = ClassDecl(p[2], p[4])
+    p[0].lineno = p.lineno(1)
 
 def p_class_members_opt(p):
     """class_members_opt : class_members
@@ -166,6 +167,7 @@ def p_static_opt(p):
 def p_function_decl(p):
     """function_decl : FUNCTION ID LPAREN params_opt RPAREN block"""
     p[0] = FunctionDecl(p[2], p[4], p[6])
+    p[0].lineno = p.lineno(1)
 
 def p_params_opt(p):
     """params_opt : params
@@ -187,6 +189,7 @@ def p_param(p):
         p[0] = Param(p[1], None)
     else:
         p[0] = Param(p[1], p[3])
+    p[0].lineno = p.lineno(1)
 
 # --- bloques y sentencias ---
 def p_block(p):
@@ -230,6 +233,7 @@ def p_stmt(p):
 def p_vardecl(p):
     """vardecl : varbind_list"""
     p[0] = VarDeclStmt(p[1])
+    p[0].lineno = p.lineno(1)
 
 def p_varbind_list(p):
     """varbind_list : varbind

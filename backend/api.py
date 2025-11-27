@@ -107,10 +107,5 @@ class BackendAPI:
         return result.__dict__
 
     def semantic_preview(self, code: str) -> Dict[str, Any]:
-        """Gancho para futura implementacion de analisis semantico."""
-        return {
-            "ok": False,
-            "implemented": False,
-            "message": "Analisis semantico aun no implementado.",
-            "code_size": len(code),
-        }
+        result = self.facade.semantic_preview(code)
+        return result.__dict__

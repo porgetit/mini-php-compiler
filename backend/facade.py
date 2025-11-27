@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from .lexer import PhpLexer
 from .parser import build_parser
+from .semantic import SemanticAnalyzer, SemanticError
 
 
 def _to_serializable(obj: Any) -> Any:
@@ -50,6 +51,22 @@ class CompilationResult:
     syntax_errors: int
     lexical_messages: List[Dict[str, str]]
     syntax_messages: List[Dict[str, str]]
+    semantic_messages: List[Dict[str, str]]
+    semantic_errors: int
+    symbol_table: List[Dict[str, Any]]
+    source_path: Optional[str]
+
+
+@dataclass
+class SemanticPreviewResult:
+    ok: bool
+    lexical_errors: int
+    syntax_errors: int
+    semantic_errors: int
+    lexical_messages: List[Dict[str, str]]
+    syntax_messages: List[Dict[str, str]]
+    semantic_messages: List[Dict[str, str]]
+    symbol_table: List[Dict[str, Any]]
     source_path: Optional[str]
 
 
@@ -58,6 +75,11 @@ class CompilerFacade:
 
     def __init__(self, project_root: Path | str | None = None) -> None:
         self.project_root = Path(project_root) if project_root else Path.cwd()
+
+    def _run_semantic(self, ast: Any) -> tuple[List[SemanticError], List[Dict[str, Any]]]:
+        analyzer = SemanticAnalyzer()
+        errors = analyzer.analyze(ast)
+        return errors, analyzer.snapshot_data
 
     def compile(self, code: str, path: str | Path | None = None) -> CompilationResult:
         lexical_messages: List[Dict[str, str]] = []
@@ -77,7 +99,24 @@ class CompilerFacade:
 
         lexical_errors = parse_lexer.error_count
         syntax_errors = parser.error_count
-        ok = ast is not None and lexical_errors == 0 and syntax_errors == 0
+        semantic_messages: List[Dict[str, str]] = []
+        semantic_errors = 0
+        symbol_table: List[Dict[str, Any]] = []
+        if ast is not None and lexical_errors == 0 and syntax_errors == 0:
+            sem_errors, snapshot = self._run_semantic(ast)
+            semantic_errors = len(sem_errors)
+            symbol_table = snapshot
+            semantic_messages = [
+                {
+                    "level": "error",
+                    "message": str(err),
+                    "lineno": err.lineno,
+                    "col": err.col,
+                }
+                for err in sem_errors
+            ]
+
+        ok = ast is not None and lexical_errors == 0 and syntax_errors == 0 and semantic_errors == 0
 
         ast_serializable = _to_serializable(ast) if ast is not None else None
 
@@ -90,5 +129,55 @@ class CompilerFacade:
             syntax_errors=syntax_errors,
             lexical_messages=lexical_messages,
             syntax_messages=syntax_messages,
+            semantic_messages=semantic_messages,
+            semantic_errors=semantic_errors,
+            symbol_table=symbol_table,
+            source_path=str(path) if path is not None else None,
+        )
+
+    def semantic_preview(self, code: str, path: str | Path | None = None) -> SemanticPreviewResult:
+        lexical_messages: List[Dict[str, str]] = []
+        syntax_messages: List[Dict[str, str]] = []
+
+        def _lex_reporter(level: str, message: str) -> None:
+            lexical_messages.append({"level": level, "message": message})
+
+        def _syn_reporter(level: str, message: str) -> None:
+            syntax_messages.append({"level": level, "message": message})
+
+        parser = build_parser(reporter=_syn_reporter)
+        parse_lexer = PhpLexer(reporter=_lex_reporter)
+        ast = parser.parse(code, lexer=parse_lexer.lexer)
+
+        lexical_errors = parse_lexer.error_count
+        syntax_errors = parser.error_count
+
+        semantic_messages: List[Dict[str, str]] = []
+        semantic_errors = 0
+        symbol_table: List[Dict[str, Any]] = []
+        if ast is not None and lexical_errors == 0 and syntax_errors == 0:
+            sem_errors, snapshot = self._run_semantic(ast)
+            semantic_errors = len(sem_errors)
+            symbol_table = snapshot
+            semantic_messages = [
+                {
+                    "level": "error",
+                    "message": str(err),
+                    "lineno": err.lineno,
+                    "col": err.col,
+                }
+                for err in sem_errors
+            ]
+
+        ok = ast is not None and lexical_errors == 0 and syntax_errors == 0 and semantic_errors == 0
+        return SemanticPreviewResult(
+            ok=ok,
+            lexical_errors=lexical_errors,
+            syntax_errors=syntax_errors,
+            semantic_errors=semantic_errors,
+            lexical_messages=lexical_messages,
+            syntax_messages=syntax_messages,
+            semantic_messages=semantic_messages,
+            symbol_table=symbol_table,
             source_path=str(path) if path is not None else None,
         )
