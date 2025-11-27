@@ -1,47 +1,43 @@
-# Mini PHP Compiler GUI
+# Documento Técnico - Mini PHP Compiler GUI
 
-Aplicacion de escritorio liviana que expone el compilador reducido de PHP a traves de una interfaz web embebida en PyWebView. El enfoque actual cubre analisis lexico y sintactico, visualizacion de tokens y AST, y deja listo un gancho para la etapa semantica.
+## Propósito y estado
 
-## Arquitectura
-- **Backend (`backend/`)**: contiene la logica del compilador (lexer, parser, AST), la fachada `CompilerFacade` que orquesta el proceso y el adaptador `BackendAPI` que expone metodos a JavaScript mediante PyWebView.
-- **Frontend (`frontend/`)**: HTML + CSS (Bootstrap) + JS. Consume el API expuesto por PyWebView para abrir, guardar y compilar archivos PHP, y muestra tokens, AST y mensajes.
-- **Entrada (`main.py`)**: crea la ventana PyWebView apuntando a `frontend/index.html` y registra la API del backend. Es el punto de arranque unico para la app.
+- Compilador educativo para un subconjunto de PHP con énfasis en funcionalidad principal; flujo completo GUI + backend vía PyWebView.
+- Etapas léxica, sintáctica y primer corte semántico implementadas; retorna tokens, AST serializable, tabla de símbolos y mensajes.
+- Punto de entrada `main.py`: crea ventana PyWebView apuntando a `frontend/index.html`, registra `BackendAPI`, soporta ejecución normal o empaquetada (PyInstaller `_MEIPASS`).
 
-## Requerimientos
-- Python 3.11+
-- Dependencias en `requirements.txt` (`ply`, `pywebview`, `pytest`)
+## Backend – Compilador
 
-Instalacion rapida:
-```bash
-python -m venv .venv
-. .venv/Scripts/activate  # en Windows
-pip install -r requirements.txt
-```
+- AST (`backend/ast_nodes.py`): dataclasses para programa, declaraciones (namespace/use/class/func), sentencias (if/while/for/foreach/echo/print/include/require/return/bloques), expresiones (literales, binarios, unarios, ternario, llamadas, acceso a miembro, new, arrays); nodos pueden almacenar `lineno`.
+- Léxico (`backend/lexer/core.py` y `backend/lexer/__init__.py`): lexer PLY configurable (`LexerConfig`); tokens PHP básicos, operadores, ternario, comentarios; reporter inyectable captura errores; `PhpLexer.tokenize/print_tokens` reinician conteo por llamada.
+- Parser (`backend/parser/core.py` y `backend/parser/__init__.py`): gramática PLY para `<?php ... ?>`; precedencias declaradas; construcción de AST usando nodos; recuperación de errores consumiendo hasta `;`, `}`, `?>`; `ParserWrapper` acumula `SyntaxErrorInfo` y acepta reporter; utilidades `build_parser` y `parse_php`.
+- Semántica (`backend/semantic/semantic_analyzer.py`, `backend/semantic/symbol_table.py`, `backend/semantic/errors.py`, `backend/semantic/__init__.py`): visitor sobre AST con tabla de símbolos basada en pila; valida redeclaraciones, uso antes de declarar, compatibilidad de tipos en asignaciones y operadores, llamadas, foreach sobre arrays, lvalues válidos; infiere tipos simples y retornos; snapshot serializable de scopes y símbolos.
+- Fachada (`backend/facade.py`): orquesta pipeline `compile`; ejecuta lexer + parser con reporte desacoplado, recolecta tokens, serializa AST, corre semántica si no hay errores previos, construye `CompilationResult` y `SemanticPreviewResult`.
+- API PyWebView (`backend/api.py`): adapta fachada a métodos expuestos a JS (`open_file_dialog`, `load_file`, `save_file`, `save_file_as`, `compile`, `semantic_preview`); maneja rutas y errores de E/S; conserva referencia a ventana para diálogos.
 
-## Uso
-```bash
-python main.py
-```
-La ventana permite:
-- Abrir un archivo PHP (dialogo de archivo) o crear uno nuevo.
-- Editar el codigo y guardarlo (guardar/guardar como).
-- Ejecutar el compilador para ver mensajes, tokens y AST.
-- Probar el gancho de analisis semantico (stub informativo por ahora).
+## Frontend – GUI
 
-## Operaciones del backend (PyWebView API)
-- `open_file_dialog`, `load_file(path)`, `save_file(path, content)`, `save_file_as(nombre, content)`
-- `compile(code, path=None)`: devuelve tokens, AST serializado, contadores de errores y mensajes lexicos/sintacticos.
-- `semantic_preview(code)`: placeholder para la futura etapa semantica.
+- Layout (`frontend/index.html`): Bootstrap 5 + Work Sans/JetBrains Mono; panel editor con numeración de líneas, barra de acciones (abrir/nuevo/guardar/ejecutar), pestañas Tokens/AST/Semántico, tablas y preformat para resultados.
+- Lógica (`frontend/app.js`): inicializa estado/UI, enruta eventos de botones, gestiona guardar/abrir vía API, ejecuta compilación y vista previa semántica, sincroniza numeración y tabulación en el editor.
+- Helpers (`frontend/ui.js`, `frontend/dom.js`, `frontend/backend.js`): estado global, badges de estado, render de mensajes combinados (léxico/sintáctico/semántico), tokens, AST JSON, resumen de errores, tabla de símbolos; caché de DOM; wrapper `invoke` para llamadas PyWebView.
 
-## Pruebas
-La suite `pytest` (`tests/test_compiler_failures.py`) valida los errores lexicos y sintacticos. Ejecuta `pytest -q` desde la raiz del proyecto.
+## Pruebas y artefactos
 
-## Estructura rápida
-- `backend/ast_nodes.py` – dataclasses del AST.
-- `backend/lexer.py` – definicion del lexer y reglas de tokens.
-- `backend/parser.py` – gramatica PLY y construccion del parser.
-- `backend/facade.py` – fachada para compilar y serializar resultados.
-- `backend/api.py` – API expuesta a la GUI via PyWebView.
-- `frontend/index.html` – layout de la interfaz.
-- `frontend/app.js` – logica de la UI y llamadas al backend.
-- `main.py` – arranque de la ventana PyWebView.
+- `tests/test_compiler_failures.py`: errores léxicos (caracteres ilegales, strings sin cerrar, variables inválidas) y sintácticos (falta de `;`, bloque sin cerrar, `new` sin paréntesis).
+- `tests/test_function_declarations.py`: combina clase y función toplevel, verifica AST y orden de nodos.
+- `tests/test_semantic.py`: variables no declaradas, éxito cuando existen símbolos, presencia de clases/métodos/funciones en tabla de símbolos, error por operador aritmético sobre strings.
+- `tests/test_ternary.py`: asegura tokens `?`/`:` y nodo `Ternary` en AST.
+- Carpeta `pruebas/`: ejemplos PHP (clases, control de flujo). `reportes/`: ejecuciones previas con fuentes usadas.
+- `requirements.txt`: dependencias principales (`ply`, `pywebview`, `pytest`).
+
+## Patrones y flujo
+
+- Fachada (`CompilerFacade`) encapsula etapas y serialización para UI.
+- Visitor semántico + tabla de símbolos en pila con snapshot ordenado.
+- Reporteo desacoplado mediante callbacks para capturar mensajes sin acoplar a stdout.
+- UI modular (DOM cache + funciones de render) y comunicación asíncrona con backend; Bootstrap para layout.
+- Listo para empaquetar con PyInstaller (manejo de `_MEIPASS` en `main.py`).
+
+## Descargo de responsabilidad (participación IA)
+
+Este documento y la descripción de los módulos `backend/ast_nodes.py`, `backend/lexer/core.py`, `backend/lexer/__init__.py`, `backend/parser/core.py`, `backend/parser/__init__.py`, `backend/semantic/semantic_analyzer.py`, `backend/semantic/symbol_table.py`, `backend/semantic/errors.py`, `backend/semantic/__init__.py`, `backend/facade.py`, `backend/api.py`, `frontend/index.html`, `frontend/app.js`, `frontend/ui.js`, `frontend/dom.js`, `frontend/backend.js`, `tests/`, `pruebas/`, `reportes/`, `main.py` fueron elaborados/consolidados con apoyo de un agente de inteligencia artificial. La autoría académica y el control técnico corresponden a Kevin Esguerra Cardona y Juan Manuel Garcia Isaza, estudiantes de Ingeniería en Sistemas y Computación de la Universidad Tecnológica de Pereira (curso de Desarrollo de Compiladores, profesor Cesar Augusto Jaramillo Acevedo, segundo semestre 2025).
