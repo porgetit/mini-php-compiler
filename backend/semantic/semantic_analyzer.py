@@ -14,9 +14,29 @@ class SemanticAnalyzer:
         self.current_function: Optional[Symbol] = None
         self.current_class: Optional[Symbol] = None
         self.snapshot_data: List[dict] = []
+        self._func_params: dict[str, List[Symbol]] = {}
+        self._func_nodes: dict[str, Any] = {}
+
+    def _get_lineno(self, node) -> Optional[int]:
+        """Obtiene la linea del nodo o de alguno de sus hijos inmediatos."""
+        if node is None:
+            return None
+        ln = getattr(node, "lineno", None)
+        if ln is not None:
+            return ln
+        for attr in ("left", "right", "target", "value", "expr", "callee", "base", "index"):
+            child = getattr(node, attr, None)
+            ln = getattr(child, "lineno", None)
+            if ln is not None:
+                return ln
+        for child in getattr(node, "__dict__", {}).values():
+            ln = getattr(child, "lineno", None) if hasattr(child, "__dict__") else None
+            if ln is not None:
+                return ln
+        return None
 
     def error(self, msg: str, node=None) -> None:
-        lineno = getattr(node, "lineno", None)
+        lineno = self._get_lineno(node)
         self.errors.append(SemanticError(msg, lineno))
 
     def analyze(self, program: Any) -> List[SemanticError]:
@@ -105,14 +125,20 @@ class SemanticAnalyzer:
             owner=owner,
         )
         self.symtab.declare(fname, sym)
+        self._func_nodes[fname] = node
 
         self.symtab.enter_scope(name=fname, kind="function" if not self.current_class else "method")
-        for p in node.params:
+        params_syms: List[Symbol] = []
+        for idx, p in enumerate(node.params):
             pname = p.name
+            default_type = None
+            if getattr(p, "default", None) is not None:
+                default_type = self.visit(p.default)
+                param_types[idx] = default_type
             psym = Symbol(
                 name=pname,
                 kind="param",
-                type=None,
+                type=default_type,
                 node=p,
                 lineno=getattr(p, "lineno", None),
                 value=self._literal_value(getattr(p, "default", None)),
@@ -122,6 +148,8 @@ class SemanticAnalyzer:
                 self.error(f"Parameter '{pname}' duplicated", p)
             if getattr(p, "default", None) is not None:
                 self.visit(p.default)
+            params_syms.append(psym)
+        self._func_params[fname] = params_syms
 
         self.current_function = sym
         self.visit(node.body)
@@ -132,9 +160,7 @@ class SemanticAnalyzer:
         for name, init in node.decls:
             existing = self.symtab.lookup(name)
             if existing:
-                # Reutiliza simbolo existente (PHP no crea nuevo scope por bloque)
-                if self.symtab.lookup_current(name):
-                    self.error(f"Variable '{name}' already declared in this scope", node)
+                # En PHP las variables son dinamicas: actualizar tipo/valor, sin marcar redeclaracion.
                 if init is not None:
                     init_type = self.visit(init)
                     if init_type and not existing.type:
@@ -231,6 +257,8 @@ class SemanticAnalyzer:
         op = getattr(node, "op", None)
 
         if op in ("+", "-", "*", "/", "%"):
+            if left_t is None or right_t is None:
+                return None
             if left_t in ("int", "float") and right_t in ("int", "float"):
                 return "float" if "float" in (left_t, right_t) else "int"
             self.error(f"Arithmetic operator '{op}' applied to non-numeric types: {left_t}, {right_t}", node)
@@ -304,10 +332,29 @@ class SemanticAnalyzer:
 
             for i, a in enumerate(args):
                 at = self.visit(a)
+                if params and i < len(params) and params[i] is None and at is not None:
+                    params[i] = at
+                    # actualiza simbolo de parametro si lo tenemos registrado
+                    if fname in self._func_params and i < len(self._func_params[fname]):
+                        psym = self._func_params[fname][i]
+                        if psym.type is None:
+                            psym.type = at
                 if i < len(params) and params[i] and at and not self.type_compatible(params[i], at):
                     self.error(f"Argument {i+1} of '{fname}' type mismatch: expected {params[i]}, got {at}", a)
 
-            return sig.get("ret")
+            ret_type = sig.get("ret")
+            # intento de inferir el tipo de retorno si aun no existe
+            if ret_type is None and fname in self._func_nodes:
+                param_map = {}
+                if fname in self._func_params:
+                    for psym in self._func_params[fname]:
+                        param_map[psym.name] = psym.type
+                func_node = self._func_nodes[fname]
+                inferred = self._infer_return_from_body(func_node.body, param_map)
+                if inferred is not None:
+                    sig["ret"] = inferred
+                    ret_type = inferred
+            return ret_type
         else:
             callee_type = self.visit(callee)
             if callee_type in ("int", "float", "bool", "array", "null"):
@@ -328,6 +375,8 @@ class SemanticAnalyzer:
                     f"Return type mismatch in function '{self.current_function.name}': expected {expected}, got {rtype}",
                     node,
                 )
+            if isinstance(self.current_function.type, dict) and self.current_function.type.get("ret") is None and rtype is not None:
+                self.current_function.type["ret"] = rtype
         return rtype
 
     # --- Control Flow ---
@@ -422,6 +471,50 @@ class SemanticAnalyzer:
             return node.value
         if isinstance(node, ast.NullLit):
             return None
+        return None
+
+    def _infer_expr_type(self, expr, param_map: dict[str, Any]) -> Any:
+        """Inferencia simple de tipos sobre expresiones usando un mapa de parametros conocido."""
+        if expr is None:
+            return None
+        if isinstance(expr, ast.NumberLit):
+            return "int" if isinstance(expr.value, int) else "float"
+        if isinstance(expr, ast.StringLit):
+            return "string"
+        if isinstance(expr, ast.BoolLit):
+            return "bool"
+        if isinstance(expr, ast.NullLit):
+            return None
+        if isinstance(expr, ast.Var):
+            return param_map.get(expr.name)
+        if isinstance(expr, ast.Binary):
+            lt = self._infer_expr_type(expr.left, param_map)
+            rt = self._infer_expr_type(expr.right, param_map)
+            op = expr.op
+            if op in ("+", "-", "*", "/", "%"):
+                if lt in ("int", "float") and rt in ("int", "float"):
+                    return "float" if "float" in (lt, rt) else "int"
+                return None
+            if op == ".":
+                return "string"
+            if op in ("==", "!=", "===", "!==", "<", ">", "<=", ">=", "&&", "||"):
+                return "bool"
+        if isinstance(expr, ast.Ternary):
+            t = self._infer_expr_type(expr.if_true, param_map)
+            f = self._infer_expr_type(expr.if_false, param_map)
+            if t == f:
+                return t
+            if t is None:
+                return f
+            if f is None:
+                return t
+        return None
+
+    def _infer_return_from_body(self, body: ast.Block, param_map: dict[str, Any]) -> Any:
+        """Busca un return en el cuerpo y trata de inferir su tipo."""
+        for stmt in getattr(body, "stmts", []):
+            if isinstance(stmt, ast.ReturnStmt):
+                return self._infer_expr_type(getattr(stmt, "expr", None) or getattr(stmt, "value", None), param_map)
         return None
 
     def type_compatible(self, declared, actual) -> bool:

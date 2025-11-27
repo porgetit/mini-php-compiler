@@ -345,13 +345,13 @@ def p_assign(p):
     if len(p) == 2:
         p[0] = p[1]
     else:
-        p[0] = Assign(p[1], p[3])
+        p[0] = Assign(p[1], p[3]); p[0].lineno = p.lineno(2)
 
 def p_conditional(p):
     """conditional : logic_or QUESTION expr COLON conditional
                    | logic_or"""
     if len(p) == 6:
-        p[0] = Ternary(p[1], p[3], p[5])
+        p[0] = Ternary(p[1], p[3], p[5]); p[0].lineno = p.lineno(2)
     else:
         p[0] = p[1]
 
@@ -359,11 +359,15 @@ def p_logic_or(p):
     """logic_or : logic_or OR logic_and
                 | logic_and"""
     p[0] = Binary('||', p[1], p[3]) if len(p) == 4 else p[1]
+    if len(p) == 4:
+        p[0].lineno = p.lineno(2)
 
 def p_logic_and(p):
     """logic_and : logic_and AND equality
                  | equality"""
     p[0] = Binary('&&', p[1], p[3]) if len(p) == 4 else p[1]
+    if len(p) == 4:
+        p[0].lineno = p.lineno(2)
 
 def p_equality(p):
     """equality : equality EQUAL rel
@@ -374,6 +378,7 @@ def p_equality(p):
     if len(p) == 4:
         op = {'==': '==', '!=': '!=', 'IDENT': '===', 'NIDENT': '!=='}
         p[0] = Binary(op[p.slice[2].type if p.slice[2].type in ('IDENT','NIDENT') else p[2]], p[1], p[3])
+        p[0].lineno = p.lineno(2)
     else:
         p[0] = p[1]
 
@@ -385,6 +390,7 @@ def p_rel(p):
            | add"""
     if len(p) == 4:
         p[0] = Binary(p[2], p[1], p[3])
+        p[0].lineno = p.lineno(2)
     else:
         p[0] = p[1]
 
@@ -395,7 +401,7 @@ def p_add(p):
            | mul"""
     if len(p) == 4:
         op = p[2] if p.slice[2].type != 'CONCAT' else '.'
-        p[0] = Binary(op, p[1], p[3])
+        p[0] = Binary(op, p[1], p[3]); p[0].lineno = p.lineno(2)
     else:
         p[0] = p[1]
 
@@ -404,7 +410,10 @@ def p_mul(p):
            | mul DIVIDE unary
            | mul MOD unary
            | unary"""
-    p[0] = Binary(p[2], p[1], p[3]) if len(p) == 4 else p[1]
+    if len(p) == 4:
+        p[0] = Binary(p[2], p[1], p[3]); p[0].lineno = p.lineno(2)
+    else:
+        p[0] = p[1]
 
 def p_unary(p):
     """unary : NOT unary
@@ -417,6 +426,7 @@ def p_unary(p):
         opmap = {'!':'!', '+':'u+', '-':'u-', 'INC':'++', 'DEC':'--'}
         op = opmap.get(p.slice[1].type, p[1])
         p[0] = Unary(op, p[2])
+        p[0].lineno = p.lineno(1)
     else:
         p[0] = p[1]
 
@@ -433,11 +443,11 @@ def p_postfix(p):
     elif len(p) == 5 and p.slice[2].type == 'LBRACKET':
         p[0] = Index(p[1], p[3])
     elif len(p) == 5 and p.slice[2].type == 'LPAREN':
-        p[0] = Call(p[1], p[3] or [])
+        p[0] = Call(p[1], p[3] or []); p[0].lineno = p.lineno(2)
     elif len(p) == 4 and p.slice[2].type == 'ARROW':
-        p[0] = Member(p[1], p[3])
+        p[0] = Member(p[1], p[3]); p[0].lineno = p.lineno(2)
     elif len(p) == 4 and p.slice[2].type == 'SCOPE':
-        p[0] = StaticAccess(p[1], p[3])
+        p[0] = StaticAccess(p[1], p[3]); p[0].lineno = p.lineno(2)
     else:
         p[0] = p[1]
 
@@ -449,12 +459,12 @@ def p_primary(p):
                | qname
                | NEW qname LPAREN args_opt RPAREN"""
     if p.slice[1].type == 'VARIABLE':
-        p[0] = Var(p[1])
+        p[0] = Var(p[1]); p[0].lineno = p.lineno(1)
     elif p.slice[1].type == 'LPAREN':
         p[0] = p[2]
     elif p.slice[1].type == 'NEW':
         args = p[4] or []
-        p[0] = New(p[2], args)
+        p[0] = New(p[2], args); p[0].lineno = p.lineno(1)
     else:
         p[0] = p[1]
 
@@ -475,6 +485,7 @@ def p_literal(p):
         p[0] = BoolLit(False)
     else:
         p[0] = NullLit()
+    p[0].lineno = p.lineno(1)
 
 # --- arrays ---
 def p_array_lit(p):

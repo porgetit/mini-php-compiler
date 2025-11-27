@@ -59,12 +59,16 @@ class SymbolTable:
         def _serialize_scope(scope: Dict[str, Symbol], meta: Dict[str, Any]) -> Dict[str, Any]:
             symbols: List[Dict[str, Any]] = []
             for sym in scope.values():
+                sym_type = sym.type
+                if isinstance(sym_type, (dict, list, tuple)):
+                    sym_type = str(sym_type)
+                val = sym.value
                 symbols.append(
                     {
                         "name": sym.name,
                         "kind": sym.kind,
-                        "type": sym.type,
-                        "value": sym.value,
+                        "type": sym_type,
+                        "value": val,
                         "owner": sym.owner,
                         "lineno": sym.lineno,
                     }
